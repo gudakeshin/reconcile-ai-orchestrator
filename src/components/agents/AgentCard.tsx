@@ -2,30 +2,45 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle2, AlertCircle, Clock, Play, Pause } from "lucide-react";
+import { CheckCircle2, AlertCircle, Clock, Play, Pause, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AgentDetails } from "./AgentDetails";
 
 type AgentStatus = 'active' | 'inactive' | 'error';
 
-interface AgentCardProps {
+export interface AgentData {
   name: string;
   description: string;
   status: AgentStatus;
+  objective?: string;
+  keyFunctions?: string[];
+  roleDefinition?: string;
+  goalSpecification?: string;
+  capabilities?: string[];
+  interactions?: string[];
+  workflow?: string[];
+  metrics?: string[];
   progress?: number;
   taskCount?: number;
   lastActive?: string;
+}
+
+interface AgentCardProps {
+  agent: AgentData;
   icon: React.ReactNode;
 }
 
-export function AgentCard({
-  name,
-  description,
-  status,
-  progress = 0,
-  taskCount = 0,
-  lastActive = 'Just now',
-  icon,
-}: AgentCardProps) {
+export function AgentCard({ agent, icon }: AgentCardProps) {
+  const { 
+    name, 
+    description, 
+    status, 
+    progress = 0, 
+    taskCount = 0, 
+    lastActive = 'Just now' 
+  } = agent;
+
   const getStatusColor = (status: AgentStatus): string => {
     switch (status) {
       case 'active':
@@ -88,18 +103,34 @@ export function AgentCard({
         </div>
       </CardContent>
       
-      <CardFooter className="pt-2">
+      <CardFooter className="pt-2 flex justify-between">
         {status === 'active' ? (
-          <Button variant="outline" size="sm" className="w-full" onClick={() => console.log(`Pause ${name}`)}>
+          <Button variant="outline" size="sm" className="flex-1 mr-2" onClick={() => console.log(`Pause ${name}`)}>
             <Pause className="h-3.5 w-3.5 mr-1" />
             Pause
           </Button>
         ) : (
-          <Button variant="outline" size="sm" className="w-full" onClick={() => console.log(`Start ${name}`)}>
+          <Button variant="outline" size="sm" className="flex-1 mr-2" onClick={() => console.log(`Start ${name}`)}>
             <Play className="h-3.5 w-3.5 mr-1" />
             Start
           </Button>
         )}
+        
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="sm">
+              <ChevronRight className="h-4 w-4" />
+              <span className="sr-only">Details</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{name}</DialogTitle>
+              <DialogDescription>{description}</DialogDescription>
+            </DialogHeader>
+            <AgentDetails agent={agent} />
+          </DialogContent>
+        </Dialog>
       </CardFooter>
     </Card>
   );
