@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { Upload, FileExcel, X } from "lucide-react";
+import { Upload, File, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface UploadedFile {
@@ -137,7 +137,7 @@ export function FileUpload() {
       </CardHeader>
       <CardContent>
         <div className="border-2 border-dashed rounded-lg p-6 text-center">
-          <FileExcel className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
+          <File className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
           <p className="text-sm mb-2">Drag and drop Excel files here or click to browse</p>
           <p className="text-xs text-muted-foreground mb-4">Supports .xlsx and .xls files</p>
           <Input 
@@ -160,7 +160,7 @@ export function FileUpload() {
               {files.map((file) => (
                 <div key={file.id} className="flex items-center justify-between bg-muted/50 p-2 rounded-md">
                   <div className="flex items-center gap-2 overflow-hidden">
-                    <FileExcel className="h-4 w-4 text-primary shrink-0" />
+                    <File className="h-4 w-4 text-primary shrink-0" />
                     <span className="text-sm font-medium truncate">{file.name}</span>
                     <span className="text-xs text-muted-foreground">({formatFileSize(file.size)})</span>
                   </div>
