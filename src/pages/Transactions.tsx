@@ -4,16 +4,18 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Filter } from "lucide-react";
+import { PageHeader } from "@/components/common/PageHeader";
+import { EmptyState } from "@/components/common/EmptyState";
 
 export default function Transactions() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Transactions</h1>
-            <p className="text-muted-foreground">View and manage all reconciliation transactions</p>
-          </div>
+          <PageHeader 
+            title="Transactions" 
+            description="View and manage all reconciliation transactions" 
+          />
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -27,9 +29,7 @@ export default function Transactions() {
         </div>
 
         <Card className="p-6">
-          <p className="text-center text-muted-foreground py-12">
-            No transactions available. Please upload files to begin reconciliation.
-          </p>
+          <EmptyState message="No transactions available. Please upload files to begin reconciliation." />
         </Card>
       </div>
     </DashboardLayout>

@@ -1,8 +1,9 @@
-
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
+import { PageHeader } from "@/components/common/PageHeader";
+import { EmptyState } from "@/components/common/EmptyState";
 
 const data = [
   {
@@ -39,10 +40,10 @@ export default function Analytics() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Analytics</h1>
-          <p className="text-muted-foreground">View reconciliation metrics and trends</p>
-        </div>
+        <PageHeader 
+          title="Analytics" 
+          description="View reconciliation metrics and trends" 
+        />
 
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList>
