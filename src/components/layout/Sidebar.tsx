@@ -1,5 +1,5 @@
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -25,29 +25,29 @@ interface NavigationItem {
   icon: React.ElementType;
   label: string;
   path: string;
-  active?: boolean;
 }
-
-const primaryNavigation: NavigationItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/", active: true },
-  { icon: Upload, label: "Upload Files", path: "/upload" },
-  { icon: Database, label: "Transactions", path: "/transactions" },
-  { icon: AlertCircle, label: "Exceptions", path: "/exceptions" },
-];
-
-const analysisNavigation: NavigationItem[] = [
-  { icon: CheckCircle, label: "Reconciliation", path: "/reconciliation" },
-  { icon: BarChart3, label: "Analytics", path: "/analytics" },
-  { icon: FileText, label: "Reports", path: "/reports" },
-];
-
-const configNavigation: NavigationItem[] = [
-  { icon: Settings, label: "Settings", path: "/settings" },
-  { icon: Users, label: "User Management", path: "/users" },
-];
 
 export function Sidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  const primaryNavigation: NavigationItem[] = [
+    { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+    { icon: Upload, label: "Upload Files", path: "/upload" },
+    { icon: Database, label: "Transactions", path: "/transactions" },
+    { icon: AlertCircle, label: "Exceptions", path: "/exceptions" },
+  ];
+
+  const analysisNavigation: NavigationItem[] = [
+    { icon: CheckCircle, label: "Reconciliation", path: "/reconciliation" },
+    { icon: BarChart3, label: "Analytics", path: "/analytics" },
+    { icon: FileText, label: "Reports", path: "/reports" },
+  ];
+
+  const configNavigation: NavigationItem[] = [
+    { icon: Settings, label: "Settings", path: "/settings" },
+    { icon: Users, label: "User Management", path: "/users" },
+  ];
   
   return (
     <div className="h-screen w-64 bg-sidebar flex flex-col border-r">
@@ -81,7 +81,7 @@ export function Sidebar() {
               {primaryNavigation.map((item) => (
                 <SidebarMenuItem key={item.label}>
                   <SidebarMenuButton 
-                    isActive={item.active} 
+                    isActive={location.pathname === item.path} 
                     onClick={() => navigate(item.path)}
                   >
                     <item.icon className="mr-2 h-4 w-4" />
@@ -100,7 +100,7 @@ export function Sidebar() {
               {analysisNavigation.map((item) => (
                 <SidebarMenuItem key={item.label}>
                   <SidebarMenuButton 
-                    isActive={item.active} 
+                    isActive={location.pathname === item.path}
                     onClick={() => navigate(item.path)}
                   >
                     <item.icon className="mr-2 h-4 w-4" />
@@ -121,7 +121,7 @@ export function Sidebar() {
               {configNavigation.map((item) => (
                 <SidebarMenuItem key={item.label}>
                   <SidebarMenuButton 
-                    isActive={item.active} 
+                    isActive={location.pathname === item.path}
                     onClick={() => navigate(item.path)}
                   >
                     <item.icon className="mr-2 h-4 w-4" />

@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Upload, File, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { runReconciliationWorkflow } from "@/lib/ai-agents";
 
 interface UploadedFile {
   id: string;
@@ -69,46 +70,41 @@ export function FileUpload() {
     }
 
     setIsProcessing(true);
-    // Simulate processing
-    setTimeout(() => {
-      toast({
-        title: "Reconciliation started",
-        description: "Files are being processed by the agents",
-      });
+    // Run the AI agent workflow
+    const { workflowSteps } = runReconciliationWorkflow(files);
+    
+    toast({
+      title: "Reconciliation started",
+      description: "Files are being processed by the agents",
+    });
+    
+    // Simulate the workflow execution with delays
+    let stepDelay = 0;
+    workflowSteps.forEach((step) => {
+      stepDelay += 2000; // 2 second delay between steps
       
-      // Log workflow
-      console.log("Data Extraction & Cleansing agent started processing files");
-      logWorkflowStep("Data Extraction & Cleansing", "Processing started", files.map(f => f.name).join(", "));
-      
-      // Simulate next step after delay
       setTimeout(() => {
-        console.log("Classifier agent categorizing transactions");
-        logWorkflowStep("Classifier", "Categorizing transactions", "Applying ML models and business rules");
+        console.log(`${step.agent} agent ${step.action}`);
+        const result = step.fn();
+        logWorkflowStep(step.agent, step.action, JSON.stringify(result));
         
-        setTimeout(() => {
-          console.log("Reconciliation agent matching transactions");
-          logWorkflowStep("Reconciliation", "Matching transactions", "Running exact and fuzzy matching algorithms");
-          
+        // If this is the last step, complete the process
+        if (step.agent === "Supervisor") {
           setTimeout(() => {
-            console.log("Routing agent handling exceptions");
-            logWorkflowStep("Routing", "Processing exceptions", "3 exceptions identified and routed");
+            setIsProcessing(false);
+            setFiles([]);
             
-            setTimeout(() => {
-              console.log("Supervisor agent generating reports");
-              logWorkflowStep("Supervisor", "Generating reports", "Reconciliation complete with 97% match rate");
-              
-              setIsProcessing(false);
-              setFiles([]);
-              
-              toast({
-                title: "Reconciliation complete",
-                description: "View the results in the dashboard",
-              });
-            }, 2000);
-          }, 2000);
-        }, 2000);
-      }, 2000);
-    }, 2000);
+            toast({
+              title: "Reconciliation complete",
+              description: "View the results in the dashboard",
+            });
+            
+            // Send email notification
+            sendEmailNotification();
+          }, 1000);
+        }
+      }, stepDelay);
+    });
   };
 
   const logWorkflowStep = (agent: string, action: string, details: string) => {
@@ -122,8 +118,16 @@ export function FileUpload() {
     };
     
     console.log("Workflow event:", workflowEvent);
+  };
+  
+  const sendEmailNotification = () => {
+    // Simulate sending an email notification
+    console.log("Sending reconciliation report to chaturvedi.pallav@gmail.com");
     
-    // This would trigger UI updates in a real implementation
+    toast({
+      title: "Email Notification Sent",
+      description: "Reconciliation report has been sent to chaturvedi.pallav@gmail.com",
+    });
   };
 
   return (

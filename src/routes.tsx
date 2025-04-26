@@ -1,9 +1,17 @@
 
 import { RouteObject } from 'react-router-dom';
 import Index from './pages/Index';
+import Upload from './pages/Upload';
+import Transactions from './pages/Transactions';
+import Exceptions from './pages/Exceptions';
+import Reconciliation from './pages/Reconciliation';
+import Analytics from './pages/Analytics';
+import Reports from './pages/Reports';
+import Settings from './pages/Settings';
+import Users from './pages/Users';
 import NotFound from './pages/NotFound';
 
-// Create basic route structure for future expansion
+// Create basic route structure with pages
 export const routes: RouteObject[] = [
   {
     path: '/',
@@ -11,35 +19,35 @@ export const routes: RouteObject[] = [
   },
   {
     path: '/upload',
-    element: <Index />, // Using Index as placeholder, would be replaced with actual page
+    element: <Upload />,
   },
   {
     path: '/transactions',
-    element: <Index />, // Using Index as placeholder, would be replaced with actual page
+    element: <Transactions />,
   },
   {
     path: '/exceptions',
-    element: <Index />, // Using Index as placeholder, would be replaced with actual page
+    element: <Exceptions />,
   },
   {
     path: '/reconciliation',
-    element: <Index />, // Using Index as placeholder, would be replaced with actual page
+    element: <Reconciliation />,
   },
   {
     path: '/analytics',
-    element: <Index />, // Using Index as placeholder, would be replaced with actual page
+    element: <Analytics />,
   },
   {
     path: '/reports',
-    element: <Index />, // Using Index as placeholder, would be replaced with actual page
+    element: <Reports />,
   },
   {
     path: '/settings',
-    element: <Index />, // Using Index as placeholder, would be replaced with actual page
+    element: <Settings />,
   },
   {
     path: '/users',
-    element: <Index />, // Using Index as placeholder, would be replaced with actual page
+    element: <Users />,
   },
   {
     path: '*',
