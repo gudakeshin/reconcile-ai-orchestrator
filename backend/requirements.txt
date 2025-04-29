@@ -1,0 +1,11 @@
+# requirements.txt
+fastapi
+uvicorn[standard]
+python-multipart
+ollama
+httpx
+aiohttp_cors
+pandas
+openpyxl
+# pydantic is used by fastapi, but explicitly add if using advanced features elsewhere
+# pydantic
