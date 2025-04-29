@@ -31,19 +31,28 @@ yarn-error.log
 .env.development.local
 .env.test.local
 .env.production.local
+lerna-debug.log*
 
 # Distribution/build
 dist/
+dist-ssr/
 build/
 out/
 coverage/
+*.local
 
 # IDE specific files
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 *.swp
 *.swo
 .DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Operating System
 .DS_Store
@@ -63,4 +72,5 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
-*.log 
+logs/
+*.log

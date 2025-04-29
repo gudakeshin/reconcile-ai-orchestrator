@@ -75,4 +75,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - FastAPI for the backend API framework
 - React/Vite for the frontend framework
-- Shadcn UI for the component system 
+- Shadcn UI for the component system
