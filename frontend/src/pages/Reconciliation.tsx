@@ -1,7 +1,8 @@
-
 import { useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/common/PageHeader";
+import { WorkflowProgressMonitor } from "@/components/workflow/WorkflowProgressMonitor";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkflowLog } from "@/components/workflow/WorkflowLog";
 import { Button } from "@/components/ui/button";
@@ -12,10 +13,22 @@ export default function Reconciliation() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Reconciliation Dashboard</h1>
-          <p className="text-muted-foreground">View and manage reconciliation processes</p>
-        </div>
+        <PageHeader 
+          title="Reconciliation" 
+          description="Monitor and control reconciliation workflows" 
+        />
+        
+        <Card>
+          <CardHeader>
+            <CardTitle>Workflow Control</CardTitle>
+            <CardDescription>
+              Track the progress of your reconciliation workflow and control execution
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <WorkflowProgressMonitor />
+          </CardContent>
+        </Card>
 
         <Tabs defaultValue="summary" className="space-y-4" onValueChange={setActiveTab}>
           <TabsList>
