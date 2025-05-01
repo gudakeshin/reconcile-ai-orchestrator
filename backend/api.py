@@ -64,6 +64,8 @@ app.add_middleware(
 # --- Global State / Job Management (In-memory - replace with DB/Redis for production) ---
 jobs: Dict[str, Dict[str, Any]] = {}
 file_headers: Dict[str, FileHeaderInfo] = {}  # Store header info for uploaded files
+uploaded_files: Dict[str, str] = {}  # Map file IDs to their temp paths
+temp_files: Dict[str, Dict[str, Any]] = {}  # Stores temp file info permanently by full path
 AGENT_ORCHESTRATOR_ID = "api_orchestrator"
 
 # --- Initialize LLM Client and Agents (Singleton instances) ---
@@ -114,6 +116,7 @@ async def run_reconciliation_pipeline(job_id: str, uploaded_files_info: List[Dic
     jobs[job_id]['current_step'] = 'Starting Extraction'
     jobs[job_id]['log'] = [f"Pipeline started at {time.time()}"]
     jobs[job_id]['results'] = {} # Store results per stage
+    jobs[job_id]['start_time'] = time.time()  # Ensure consistent timestamp format
     pipeline_start_time = time.time()
 
     try:
@@ -245,56 +248,96 @@ async def run_reconciliation_pipeline(job_id: str, uploaded_files_info: List[Dic
 
 @app.post("/api/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
-    """Upload files and extract headers."""
+    """Upload files for reconciliation."""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
     try:
-        if not files:
-            raise HTTPException(status_code=400, detail="No files provided")
+        # Create a new job entry
+        job_id = str(uuid.uuid4())
+        job = {
+            "status": "running",
+            "current_step": "File Upload",
+            "start_time": datetime.now().isoformat(),
+            "files": [],
+            "error": None
+        }
+        jobs[job_id] = job
 
-        uploaded_files = []
-        headers_info = {}
-
+        # Process each file
         for file in files:
             try:
-                # Create a temporary file to store the uploaded content
-                temp_dir = tempfile.mkdtemp()
-                temp_path = os.path.join(temp_dir, file.filename)
+                # Create a temporary directory for this job
+                temp_dir = os.path.join(tempfile.gettempdir(), f"reconai_{job_id}")
+                os.makedirs(temp_dir, exist_ok=True)
+
+                # Save file to temp directory
+                file_id = str(uuid.uuid4())
+                file_path = os.path.join(temp_dir, file.filename)
                 
-                # Save the uploaded file
-                with open(temp_path, "wb") as buffer:
+                with open(file_path, "wb") as buffer:
                     content = await file.read()
                     buffer.write(content)
 
-                # Extract headers and sample data
-                headers, sample_data = extract_headers_and_sample(temp_path)
-
                 # Store file info
                 file_info = {
-                    "original_filename": file.filename,
-                    "temp_path": temp_path,
+                    "id": file_id,
+                    "name": file.filename,
+                    "path": file_path,
                     "content_type": file.content_type,
-                    "size": os.path.getsize(temp_path)
+                    "size": os.path.getsize(file_path)
                 }
-                uploaded_files.append(file_info)
+                uploaded_files[file_id] = file_path
+                temp_files[file_path] = file_info
 
-                # Store header info
-                headers_info[file.filename] = {
+                # Extract headers and sample data
+                headers, sample_data = extract_headers_and_sample(file_path)
+
+                # Update job state
+                job["files"].append({
+                    "id": file_id,
+                    "name": file.filename,
                     "headers": headers,
-                    "sampleData": sample_data
-                }
+                    "sample_data": sample_data,
+                    "path": file_path
+                })
+
+                # Add log entry with correct arguments
+                add_workflow_event(
+                    agent="file_uploader",
+                    action="file_upload",
+                    status="completed",
+                    details={
+                        "file_id": file_id,
+                        "filename": file.filename,
+                        "headers": headers
+                    }
+                )
 
                 logger.info(f"Successfully processed file: {file.filename}")
                 logger.info(f"Headers found: {headers}")
 
             except Exception as e:
                 logger.error(f"Error processing file {file.filename}: {str(e)}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Error processing file {file.filename}: {str(e)}"
-                )
+                job["error"] = f"Error processing file {file.filename}: {str(e)}"
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Update job state if we have 2 or more files
+        if len(job["files"]) >= 2:
+            job["current_step"] = "Header Mapping"
+            add_workflow_event(
+                agent="file_uploader",
+                action="status_update",
+                status="completed",
+                details={
+                    "message": "Files uploaded successfully, ready for header mapping",
+                    "files": [f["name"] for f in job["files"]]
+                }
+            )
 
         return {
-            "files": uploaded_files,
-            "headers": headers_info
+            "job_id": job_id,
+            "files": [{"id": f["id"], "name": f["name"], "headers": f["headers"]} for f in job["files"]]
         }
 
     except Exception as e:
@@ -308,33 +351,214 @@ async def configure_reconciliation(
     matching_headers: Dict[str, str] = Form(...),
     tolerance_rules: Dict[str, float] = Form(default_factory=dict)
 ):
-    """Configure reconciliation with selected headers."""
-    if source_file not in file_headers or target_file not in file_headers:
-        raise HTTPException(status_code=400, detail="Invalid file selection")
+    """Configure reconciliation with header mappings."""
+    try:
+        # Get the most recent job
+        if not jobs:
+            raise HTTPException(status_code=400, detail="No active job found")
+
+        job_id = list(jobs.keys())[-1]
+        job = jobs[job_id]
+
+        # Validate files exist
+        source_exists = any(f["name"] == source_file for f in job["files"])
+        target_exists = any(f["name"] == target_file for f in job["files"])
+
+        if not source_exists or not target_exists:
+            raise HTTPException(status_code=400, detail="Source or target file not found in uploaded files")
+
+        # Validate headers exist in files
+        source_headers = next(f["headers"] for f in job["files"] if f["name"] == source_file)
+        target_headers = next(f["headers"] for f in job["files"] if f["name"] == target_file)
+
+        for source_header in matching_headers.keys():
+            if source_header not in source_headers:
+                raise HTTPException(status_code=400, detail=f"Source header '{source_header}' not found in source file")
+
+        for target_header in matching_headers.values():
+            if target_header not in target_headers:
+                raise HTTPException(status_code=400, detail=f"Target header '{target_header}' not found in target file")
+
+        # Create configuration
+        config = {
+            "source_file": source_file,
+            "target_file": target_file,
+            "matching_headers": matching_headers,
+            "tolerance_rules": tolerance_rules
+        }
+
+        # Update job state
+        job["matching_headers"] = matching_headers
+        job["current_step"] = "Data Extraction"
+        job["config"] = config
+
+        # Add log entry
+        add_workflow_event(
+            agent="configurator",
+            action="header_mapping",
+            status="completed",
+            details={
+                "mappings": matching_headers
+            }
+        )
+
+        return {"status": "success", "message": "Reconciliation configured successfully"}
+
+    except Exception as e:
+        logger.error(f"Error in configure_reconciliation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reconcile/configure")
+async def configure_reconciliation(
+    source_file: str = Form(...),
+    target_file: str = Form(...),
+    matching_headers: str = Form(...)
+):
+    """
+    Configure the reconciliation process with source and target files and header mappings.
+    """
+    try:
+        # Parse the matching headers from the form data
+        matching_headers_dict = json.loads(matching_headers)
+        
+        # Validate that both files exist
+        if source_file not in uploaded_files:
+            raise HTTPException(status_code=404, detail=f"Source file {source_file} not found")
+        if target_file not in uploaded_files:
+            raise HTTPException(status_code=404, detail=f"Target file {target_file} not found")
+        
+        # Validate that all source headers exist in the source file
+        source_headers = file_headers[source_file].headers
+        for source_header in matching_headers_dict.keys():
+            if source_header not in source_headers:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Source header {source_header} not found in source file"
+                )
+        
+        # Validate that all target headers exist in the target file
+        target_headers = file_headers[target_file].headers
+        for target_header in matching_headers_dict.values():
+            if target_header not in target_headers:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Target header {target_header} not found in target file"
+                )
+        
+        # Create a configuration object
+        config = {
+            "source_file": source_file,
+            "target_file": target_file,
+            "matching_headers": matching_headers_dict,
+            "source_headers": source_headers,
+            "target_headers": target_headers,
+            "source_sample_data": file_headers[source_file].sampleData,
+            "target_sample_data": file_headers[target_file].sampleData
+        }
+
+        # Update job state
+        job_id = list(jobs.keys())[-1]  # Get the most recent job
+        jobs[job_id]["matching_headers"] = matching_headers_dict
+        jobs[job_id]["current_step"] = "Data Extraction"
+        jobs[job_id]["status"] = "running"
+        jobs[job_id]["log"].append("Header mapping completed successfully")
+        
+        return {"config": config}
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid matching_headers format")
+    except Exception as e:
+        logger.error(f"Error configuring reconciliation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def get_temp_file_path(file_id: str) -> str:
+    """
+    Get the temporary file path for a given file ID.
+    This could be the original filename, a UUID, or a full path.
+    """
+    logger.info(f"Looking for file with ID: {file_id}")
     
-    config = ReconciliationConfig(
-        source_file=source_file,
-        target_file=target_file,
-        matching_headers=matching_headers,
-        tolerance_rules=tolerance_rules
-    )
+    # First, check if it's a direct file path that exists
+    if os.path.isfile(file_id):
+        logger.info(f"Found file directly at path: {file_id}")
+        return file_id
     
-    return {"message": "Reconciliation configured successfully", "config": config}
+    # Check in uploaded_files dictionary
+    if file_id in uploaded_files:
+        path = uploaded_files[file_id]
+        logger.info(f"Found file ID in uploaded_files mapping: {path}")
+        if os.path.isfile(path):
+            return path
+        else:
+            logger.warning(f"Path from uploaded_files exists in dictionary but not on disk: {path}")
+    
+    # Check in temp_files dictionary
+    for file_path, file_info in temp_files.items():
+        if file_info.get("id") == file_id:
+            logger.info(f"Found file ID in temp_files: {file_path}")
+            if os.path.isfile(file_path):
+                return file_path
+            else:
+                logger.warning(f"Path from temp_files exists in dictionary but not on disk: {file_path}")
+    
+    # Check if any path in temp_files matches our filename
+    basename = os.path.basename(file_id)
+    logger.info(f"Trying to match by basename: {basename}")
+    
+    for file_path, file_info in temp_files.items():
+        if file_info.get("name") == basename:
+            logger.info(f"Found basename match in temp_files: {file_path}")
+            if os.path.isfile(file_path):
+                return file_path
+            else:
+                logger.warning(f"Path from basename match exists in dictionary but not on disk: {file_path}")
+    
+    # If we get here, we couldn't find the file
+    logger.error(f"File with ID {file_id} not found. Available files in uploaded_files: {uploaded_files}")
+    logger.error(f"Available files in temp_files: {list(temp_files.keys())}")
+    logger.error(f"Available jobs: {[job.get('files') for job in jobs.values()]}")
+    
+    raise ValueError(f"File with ID {file_id} not found")
 
 @app.post("/api/reconcile")
 async def start_reconciliation(
-    source_file: str,
-    target_file: str,
-    matching_headers: Dict[str, str],
-    tolerance_rules: Optional[Dict[str, Any]] = None
+    source_file: str = Form(...),
+    target_file: str = Form(...),
+    matching_headers: str = Form(...),
+    tolerance_rules: Optional[str] = Form(None)
 ):
     try:
-        # Get file paths from temporary storage
-        source_path = get_temp_file_path(source_file)
-        target_path = get_temp_file_path(target_file)
+        # Parse JSON strings from form data
+        matching_headers_dict = json.loads(matching_headers)
+        tolerance_rules_dict = json.loads(tolerance_rules) if tolerance_rules else None
         
-        if not os.path.exists(source_path) or not os.path.exists(target_path):
-            raise HTTPException(status_code=404, detail="One or both files not found")
+        logger.info(f"Received reconciliation request with source: {source_file}, target: {target_file}")
+        logger.info(f"Available uploaded files: {uploaded_files}")
+        logger.info(f"Available temp files: {list(temp_files.keys())}")
+        
+        # Get file paths from temporary storage
+        try:
+            source_path = get_temp_file_path(source_file)
+            logger.info(f"Source file path resolved to: {source_path}")
+        except ValueError as e:
+            logger.error(f"Could not find source file: {e}")
+            raise HTTPException(status_code=404, detail=f"Source file not found: {str(e)}")
+            
+        try:
+            target_path = get_temp_file_path(target_file)
+            logger.info(f"Target file path resolved to: {target_path}")
+        except ValueError as e:
+            logger.error(f"Could not find target file: {e}")
+            raise HTTPException(status_code=404, detail=f"Target file not found: {str(e)}")
+        
+        # Verify files exist on disk
+        if not os.path.exists(source_path):
+            logger.error(f"Source path {source_path} does not exist on disk")
+            raise HTTPException(status_code=404, detail=f"Source file not found on disk: {source_path}")
+        
+        if not os.path.exists(target_path):
+            logger.error(f"Target path {target_path} does not exist on disk")
+            raise HTTPException(status_code=404, detail=f"Target file not found on disk: {target_path}")
         
         # Create a unique job ID
         job_id = str(uuid.uuid4())
@@ -344,14 +568,17 @@ async def start_reconciliation(
             "job_id": job_id,
             "status": "pending",
             "current_step": "Starting",
-            "start_time": datetime.now().isoformat(),
+            "start_time": time.time(),  # Store as timestamp
             "source_file": source_file,
             "target_file": target_file,
-            "matching_headers": matching_headers,
-            "tolerance_rules": tolerance_rules or {},
-            "results": None,
+            "source_path": source_path,
+            "target_path": target_path,
+            "matching_headers": matching_headers_dict,
+            "tolerance_rules": tolerance_rules_dict or {},
+            "files": [],
+            "log": [],
             "error": None,
-            "log": []
+            "results": {}
         }
         
         # Store job state
@@ -371,10 +598,33 @@ async def process_reconciliation(job_id: str):
         job = jobs[job_id]
         job["status"] = "processing"
         job["current_step"] = "Reading Files"
+        job["start_time"] = time.time()  # Ensure consistent timestamp format
+        
+        # Use the resolved paths directly from the job state
+        source_path = job["source_path"]
+        target_path = job["target_path"]
+        
+        logger.info(f"Reading source file from: {source_path}")
+        logger.info(f"Reading target file from: {target_path}")
         
         # Read files with specified headers
-        source_df = pd.read_excel(job["source_file"])
-        target_df = pd.read_excel(job["target_file"])
+        try:
+            source_df = pd.read_excel(source_path)
+        except Exception as e:
+            logger.error(f"Error reading source file: {str(e)}")
+            job["status"] = "failed"
+            job["error"] = f"Error reading source file: {str(e)}"
+            job["current_step"] = "Failed"
+            return
+            
+        try:
+            target_df = pd.read_excel(target_path)
+        except Exception as e:
+            logger.error(f"Error reading target file: {str(e)}")
+            job["status"] = "failed"
+            job["error"] = f"Error reading target file: {str(e)}"
+            job["current_step"] = "Failed"
+            return
         
         # Apply header mappings
         source_headers = list(job["matching_headers"].keys())
@@ -588,7 +838,17 @@ async def get_reconciliation_status(job_id: str = Path(..., description="The ID 
         # Calculate duration if job has started
         duration_seconds = None
         if job.get("start_time"):
-            duration_seconds = time.time() - job["start_time"]
+            try:
+                start_time = job.get("start_time")
+                if isinstance(start_time, (int, float)):
+                    # Calculate duration from timestamp
+                    duration_seconds = time.time() - start_time
+                else:
+                    logger.warning(f"Unexpected start_time type: {type(start_time)}")
+                    duration_seconds = None
+            except Exception as e:
+                logger.warning(f"Error calculating duration: {str(e)}")
+                duration_seconds = None
 
         # Return relevant status information
         return {
@@ -615,6 +875,103 @@ async def get_system_metrics():
          "jobs_running": statuses.count('running'), "jobs_completed": statuses.count('completed'),
          "jobs_failed": statuses.count('failed'),
      }
+
+@app.get("/api/workflow/status")
+async def get_workflow_status():
+    """Get the current workflow status."""
+    try:
+        # Get the most recent job
+        if not jobs:
+            return {
+                "status": "idle",
+                "current_step": "No active jobs",
+                "progress": 0,
+                "error": None,
+                "steps": [
+                    {"name": "File Upload", "status": "pending"},
+                    {"name": "Header Mapping", "status": "pending"},
+                    {"name": "Data Extraction", "status": "pending"},
+                    {"name": "Reconciliation", "status": "pending"},
+                    {"name": "Results", "status": "pending"}
+                ]
+            }
+
+        # Get the most recent job
+        job_id = list(jobs.keys())[-1]
+        job = jobs[job_id]
+
+        # Initialize steps
+        steps = [
+            {"name": "File Upload", "status": "pending"},
+            {"name": "Header Mapping", "status": "pending"},
+            {"name": "Data Extraction", "status": "pending"},
+            {"name": "Reconciliation", "status": "pending"},
+            {"name": "Results", "status": "pending"}
+        ]
+
+        # Calculate progress and update step statuses
+        progress = 0
+        current_step = "No active jobs"
+        status = "idle"
+
+        # Check if files are uploaded
+        if job.get("files") and len(job["files"]) >= 2:
+            steps[0]["status"] = "completed"
+            progress = 20
+            current_step = "File Upload"
+            status = "running"
+
+        # Check if headers are mapped
+        if job.get("matching_headers") and len(job["matching_headers"]) > 0:
+            steps[1]["status"] = "completed"
+            progress = 40
+            current_step = "Header Mapping"
+            status = "running"
+
+        # Update based on current step
+        if job.get("current_step"):
+            current_step = job["current_step"]
+            if current_step == "Reading Files":
+                steps[2]["status"] = "in-progress"
+                progress = 60
+            elif current_step == "Processing Reconciliation":
+                steps[2]["status"] = "completed"
+                steps[3]["status"] = "in-progress"
+                progress = 80
+            elif current_step == "Completed":
+                steps[3]["status"] = "completed"
+                steps[4]["status"] = "completed"
+                progress = 100
+                status = "completed"
+            elif current_step == "Error":
+                for step in steps:
+                    if step["status"] == "in-progress":
+                        step["status"] = "error"
+                status = "error"
+
+        return {
+            "status": status,
+            "current_step": current_step,
+            "progress": progress,
+            "error": job.get("error"),
+            "steps": steps
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting workflow status: {str(e)}")
+        return {
+            "status": "error",
+            "current_step": "Error",
+            "progress": 0,
+            "error": str(e),
+            "steps": [
+                {"name": "File Upload", "status": "error"},
+                {"name": "Header Mapping", "status": "error"},
+                {"name": "Data Extraction", "status": "error"},
+                {"name": "Reconciliation", "status": "error"},
+                {"name": "Results", "status": "error"}
+            ]
+        }
 
 # --- Run the API server ---
 if __name__ == "__main__":
